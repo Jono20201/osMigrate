@@ -7,13 +7,14 @@ import (
 
 type ConnectionParams struct {
 	hostname string
+	port     uint
 	username string
 	password string
 	schema   string
 }
 
 func connect(params ConnectionParams) *sql.DB {
-	connStr := fmt.Sprintf("%s:%s@tcp(%s)/?multiStatements=true", params.username, params.password, params.hostname)
+	connStr := fmt.Sprintf("%s:%s@tcp(%s:%d)/?multiStatements=true", params.username, params.password, params.hostname, params.port)
 	pool, err := sql.Open("mysql", connStr)
 
 	if err != nil {
@@ -26,7 +27,7 @@ func connect(params ConnectionParams) *sql.DB {
 
 	_, err = pool.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %[1]s; USE %[1]s", params.schema))
 
-	if err := pool.Ping(); err != nil {
+	if err != nil {
 		logError(err)
 	}
 
