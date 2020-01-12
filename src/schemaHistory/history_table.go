@@ -5,7 +5,21 @@ import (
 	"fmt"
 	"github.com/MakeNowJust/heredoc"
 	"log"
+	"time"
 )
+
+type SchemaHistory struct {
+	InstalledRank uint32
+	Version       string
+	Description   string
+	Type          string
+	Script        string
+	Checksum      uint32
+	InstalledBy   string
+	InstalledOn   time.Time
+	ExecutionTime int64
+	Success       bool
+}
 
 func DoesTableExist(tableName string, db *sql.DB) bool {
 	var table string
@@ -23,11 +37,11 @@ func DoesTableExist(tableName string, db *sql.DB) bool {
 
 func CreateIfNotExists(tableName string, db *sql.DB) {
 	if DoesTableExist(tableName, db) {
-		fmt.Printf("%s already exists.", tableName)
+		fmt.Println(fmt.Sprintf("%s already exists.", tableName))
 		return
 	}
 
-	fmt.Printf("%s does not exist, creating so we can keep track of migrations.", tableName)
+	fmt.Println(fmt.Sprintf("%s does not exist, creating so we can keep track of migrations.", tableName))
 
 	createTableSql := heredoc.Docf(`
 		CREATE TABLE IF NOT EXISTS %[1]s
@@ -56,6 +70,39 @@ func CreateIfNotExists(tableName string, db *sql.DB) {
 	}
 }
 
-func RetrieveHistory(tableName string, db *sql.DB) {
+func RetrieveHistory(tableName string, db *sql.DB) *map[string]SchemaHistory {
+	historyRecords := make(map[string]SchemaHistory)
 
+	rows, err := db.Query(fmt.Sprintf("SELECT * FROM %s", tableName))
+
+	if err != nil {
+		log.Fatalf("Error retrieving history: %v", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var history SchemaHistory
+
+		err = rows.Scan(
+			&history.InstalledRank,
+			&history.Version,
+			&history.Description,
+			&history.Type,
+			&history.Script,
+			&history.Checksum,
+			&history.InstalledBy,
+			&history.InstalledOn,
+			&history.ExecutionTime,
+			&history.Success,
+		)
+
+		if err != nil {
+			log.Fatalf("Error mapping to history: %v", err)
+		}
+
+		historyRecords[history.Script] = history
+	}
+
+	return &historyRecords
 }

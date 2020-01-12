@@ -1,6 +1,7 @@
 package main
 
 import (
+	migrationPkg "./migrations"
 	"./schemaHistory"
 	"flag"
 	"fmt"
@@ -8,11 +9,7 @@ import (
 	"log"
 )
 
-const VERSION = 1.0
-
-func logError(err error) {
-	log.Fatalf("Fatal error: %v", err)
-}
+const VERSION = 0.1
 
 func main() {
 	fmt.Println(fmt.Sprintf("osMigrate v%g", VERSION))
@@ -41,7 +38,44 @@ func main() {
 	db := connect(connectionParams)
 	defer db.Close()
 
-	loadMigrations("./fixtures")
 	schemaHistory.CreateIfNotExists(*schemaTable, db)
-	schemaHistory.RetrieveHistory(*schemaTable, db)
+	history := schemaHistory.RetrieveHistory(*schemaTable, db)
+	currentVersion := schemaHistory.CurrentSchemaVersion(history)
+	anyFailures, failedMigration := schemaHistory.AnyFailures(history)
+	fmt.Println(fmt.Sprintf("Current schema verion: %v", currentVersion))
+
+	if anyFailures {
+		log.Fatalf("Unable to run migrations due to a previous failure with \"%s\". Please resolve manually.", failedMigration.Script)
+	}
+
+	versionedMigrations := migrationPkg.LoadVersionedMigrations("./fixtures")
+	repeatableMigrations := migrationPkg.LoadRepeatableMigrations("./fixtures")
+
+	for _, migration := range versionedMigrations {
+		if _, found := (*history)[migration.Filename]; found {
+			continue
+		}
+
+		history, err := migrationPkg.Apply(db, &migration)
+
+		schemaHistory.Put(db, *schemaTable, history)
+
+		if err != nil {
+			log.Fatalf("Error applying migration: %v", err)
+		}
+	}
+
+	for _, migration := range repeatableMigrations {
+		if existingMigration, found := (*history)[migration.Filename]; found && migration.Checksum == existingMigration.Checksum {
+			continue
+		}
+
+		history, err := migrationPkg.Apply(db, &migration)
+
+		schemaHistory.Put(db, *schemaTable, history)
+
+		if err != nil {
+			log.Fatalf("Error applying migration: %v", err)
+		}
+	}
 }
